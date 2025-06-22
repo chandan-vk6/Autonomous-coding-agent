@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AI Coder Pro - Fixed</title>
+    <style>
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0; height: 100%; overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e; color: #d4d4d4;
+        }
+        .container { display: flex; height: 100vh; }
+        
+        /* --- Sidebar Styles --- */
+        .sidebar {
+            width: 320px; background: #252526; display: flex; flex-direction: column;
+            border-right: 1px solid #3c3c3c;
+        }
+        .mode-selector { padding: 12px; background: #2d2d30; border-bottom: 1px solid #3c3c3c; display: flex; flex-wrap: wrap; gap: 8px; }
+        .mode-btn {
+            padding: 8px 12px; border: 1px solid #454545; background: #3c3c3c;
+            color: #cccccc; cursor: pointer; border-radius: 4px; font-size: 13px;
+            transition: all 0.2s; flex-grow: 1; text-align: center;
+        }
+        .mode-btn.active { background: #0e639c; border-color: #0e639c; color: white; }
+        .mode-btn:hover:not(.active) { background: #454545; }
+        .streaming { color: #4fc3f7; animation: pulse 1.5s infinite; }
+        /* Bugfix Toggle Switch */
+        .bugfix-options { display: none; width: 100%; margin-top: 8px; padding: 8px; background-color: #3c3c3c; border-radius: 4px; align-items: center; justify-content: center; gap: 8px; font-size: 12px;}
+        .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #4caf50; }
+        input:checked + .slider:before { transform: translateX(14px); }
+
+        .input-section { padding: 12px; border-bottom: 1px solid #3c3c3c; }
+        .input-area { width: 100%; min-height: 80px; max-height: 150px; background: #1e1e1e; border: 1px solid #454545; border-radius: 4px; color: #cccccc; padding: 8px; font-family: monospace; font-size: 13px; resize: vertical; outline: none; }
+        .input-area:focus { border-color: #0e639c; }
+        .send-btn { margin-top: 8px; padding: 8px 16px; background: #0e639c; width: 100%; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+        .send-btn:hover { background: #1177bb; }
+        .send-btn:disabled { background: #454545; cursor: not-allowed; }
+        .context-info { padding: 8px 12px; font-size: 11px; color: #888; border-bottom: 1px solid #3c3c3c; }
+        .bugfix-status { padding: 12px; font-size: 12px; border-bottom: 1px solid #3c3c3c; background: #2d2d30; display: none; transition: all 0.3s; }
+        .bugfix-status.analyzing { color: #ffb74d; }
+        .bugfix-status.fixing { color: #4fc3f7; }
+        .bugfix-status.complete { color: #81c784; }
+
+        .history { flex: 1; overflow-y: auto; padding: 12px; }
+        .history-item { margin-bottom: 12px; padding: 8px; background: #2d2d30; border-left: 3px solid #0e639c; border-radius: 0 4px 4px 0; font-size: 12px; }
+        .history-mode { color: #4fc3f7; font-weight: bold; text-transform: uppercase; font-size: 10px; margin-bottom: 4px; }
+        .history-prompt { color: #cccccc; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .history-time { color: #888; font-size: 10px; }
+
+        .editor-container { flex: 1; position: relative; background: #1e1e1e; display: flex; flex-direction: column; }
+        .editor-header { height: 35px; background: #2d2d30; border-bottom: 1px solid #3c3c3c; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; flex-shrink: 0; }
+        .status { color: #888; }
+        .editor { height: calc(100vh - 35px); position: relative; flex-grow: 1; }
+        
+        /* --- Styles for Auto-Fix Animation --- */
+        .base-highlight { background-color: rgba(58, 62, 77, 0.6) !important; }
+        .cursor-highlight { background-color: rgba(14, 99, 156, 0.4) !important; border-left: 2px solid #4fc3f7; }
+
+        /* --- Style for Completion Highlight --- */
+        .completion-highlight {
+            background-color: rgba(14, 99, 156, 0.3) !important;
+            transition: background-color 0.5s ease-out;
+        }
+
+        /* --- Styles for Interactive Diff --- */
+        #diff-view { font-family: 'Consolas', 'Menlo', 'Monaco', monospace; font-size: 14px; height: 100%; overflow-y: auto; position: relative; padding: 5px 0; }
+        .diff-line { padding: 2px 10px 2px 50px; position: relative; white-space: pre; min-height: 20px; transition: background-color 0.3s ease; }
+        .diff-line::before { content: attr(data-line-num); position: absolute; left: 10px; top: 2px; width: 30px; text-align: right; color: #858585; user-select: none; }
+        .line-analyzing { background-color: rgba(60, 120, 180, 0.15); }
+        .line-buggy { background-color: rgba(244, 67, 54, 0.15); }
+        .line-suggestion { background-color: rgba(76, 175, 80, 0.15); position: relative; }
+        .line-actions { position: absolute; right: 15px; top: 1px; display: none; align-items: center; height: 100%; }
+        .line-suggestion:hover .line-actions { display: flex; }
+        .action-btn { cursor: pointer; border: 1px solid transparent; border-radius: 4px; padding: 0px 4px; font-size: 14px; line-height: 1; margin-left: 5px; transition: all 0.2s ease; }
+        .action-btn.accept { background-color: rgba(76, 175, 80, 0.4); border-color: #4caf50; }
+        .action-btn.accept:hover { background-color: rgba(76, 175, 80, 0.7); }
+        .action-btn.reject { background-color: rgba(244, 67, 54, 0.4); border-color: #f44336; }
+        .action-btn.reject:hover { background-color: rgba(244, 67, 54, 0.7); }
+        .line-suggestion[data-status="accepted"]::after, .line-buggy[data-status="accepted"]::after { content: '✔'; position: absolute; left: 3px; top: 2px; color: #4caf50; }
+        .line-suggestion[data-status="rejected"]::after, .line-buggy[data-status="rejected"]::after { content: '✖'; position: absolute; left: 3px; top: 2px; color: #f44336; }
+        #diff-controls { position: absolute; bottom: 20px; right: 20px; z-index: 100; display: flex; gap: 10px; }
+        .control-btn { padding: 10px 20px; font-size: 14px; border-radius: 5px; border: 1px solid #555; cursor: pointer; transition: all 0.2s ease; }
+        .control-btn:disabled { background-color: #454545; cursor: not-allowed; opacity: 0.5; }
+        #apply-all-btn { background-color: #2c722f; color: white; }
+        #apply-all-btn:hover:not(:disabled) { background-color: #388e3c; }
+        #reject-all-btn { background-color: #b71c1c; color: white; }
+        #reject-all-btn:hover:not(:disabled) { background-color: #d32f2f; }
+        #cancel-fix-btn { background-color: #555; color: white; }
+        #cancel-fix-btn:hover:not(:disabled) { background-color: #666; }
+        #apply-changes-btn { background-color: #0e639c; color: white; }
+        #apply-changes-btn:hover:not(:disabled) { background-color: #1177bb; }
+        
+        .toast { position: fixed; top: 20px; right: 20px; color: white; padding: 12px 16px; border-radius: 4px; z-index: 1001; animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="mode-selector">
+                <div class="mode-btn active" data-mode="generate">Generate</div>
+                <div class="mode-btn" data-mode="bugfix">🔧 Fix Bugs</div>
+                <div class="mode-btn" data-mode="complete">Complete</div>
+                <div class="bugfix-options" id="bugfixOptions">
+                    <span>Interactive Diff</span>
+                    <label class="switch">
+                        <input type="checkbox" id="autoFixToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <span>Auto-Fix</span>
+                </div>
+            </div>
+            <div class="input-section">
+                <textarea class="input-area" placeholder="Describe what you want..."></textarea>
+                <button class="send-btn">Send</button>
+            </div>
+            <div class="context-info">
+                <div>🧠 Context: <span id="contextCount">0</span> interactions</div>
+                <div>📝 Mode: <span id="currentMode">Generate</span></div>
+            </div>
+            <div class="bugfix-status" id="bugfixStatus"></div>
+            <div class="history" id="history"></div>
+        </div>
+        
+        <div class="editor-container">
+            <div class="editor-header">
+                <span>main.py</span>
+                <span class="status" id="status">Ready</span>
+            </div>
+            <div id="editor" class="editor"></div>
+            <div id="diff-view" style="display: none;"></div>
+            <div id="diff-controls" style="display: none;">
+                <button id="apply-all-btn" class="control-btn">Accept All</button>
+                <button id="reject-all-btn" class="control-btn">Reject All</button>
+                <button id="cancel-fix-btn" class="control-btn">Cancel</button>
+                <button id="apply-changes-btn" class="control-btn">Apply Selected Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/monaco-editor@0.33.0/min/vs/loader.js"></script>
+
+    <script>
+        // --- Globals & Initialization ---
+        let socket;
+        let editor;
+        let currentMode = 'generate';
+        let isStreaming = false;
+        let interactionCount = 0;
+        let diffData = []; 
+        let originalCodeForDiff = '';
+        let baseDecorations = []; 
+        let cursorDecorations = []; 
+
+        // Initialize Socket.IO connection
+        function initializeSocket() {
+            try {
+                socket = io('http://localhost:5000', {
+                    timeout: 5000,
+                    transports: ['websocket', 'polling']
+                });
+                
+                socket.on('connect', () => updateStatus('Connected'));
+                socket.on('disconnect', () => updateStatus('Disconnected', true));
+                socket.on('connect_error', () => updateStatus('Connection Error', true));
+
+                // Main response handler
+                socket.on('response', (response) => {
+                    if (response.type === 'stream') {
+                        if (currentMode === 'complete') return; // Ignore regular streaming for complete mode
+                        handleStartState('Generating...');
+                        appendToEditor(response.content);
+                    } else if (response.type === 'error') {
+                        showToast(response.content, 'error');
+                        handleEndState('Error', true);
+                    } else if (response.type === 'no_fixes_found') {
+                        showToast(response.content, 'success');
+                        handleEndState('Ready');
+                    } else if (response.type === 'end') {
+                        const inputArea = document.querySelector('.input-area');
+                        const promptText = inputArea.value.trim();
+                        if (promptText) {
+                            addToHistory(promptText, currentMode);
+                        } else if (currentMode !== 'generate') {
+                            addToHistory(`Code ${currentMode} analysis`, currentMode);
+                        }
+                        inputArea.value = '';
+                        interactionCount++;
+                        updatecontext();
+                        handleEndState('Ready');
+                    }
+                });
+                
+                // NEW: Handler for intelligent code completion with highlighting
+                socket.on('completion_patch', (patch) => {
+                    if (!editor) return;
+
+                    const model = editor.getModel();
+                    const { start_line, end_line, new_text } = patch;
+                    
+                    // Determine the range to highlight
+                    let highlightRange;
+                    if (start_line > end_line) { // Insertion
+                        highlightRange = new monaco.Range(start_line, 1, start_line, 1);
+                    } else { // Replacement
+                        highlightRange = new monaco.Range(start_line, 1, end_line, model.getLineMaxColumn(end_line));
+                    }
+
+                    // Apply the highlight decoration
+                    const decoration = editor.deltaDecorations([], [{
+                        range: highlightRange,
+                        options: { isWholeLine: true, className: 'completion-highlight' }
+                    }]);
+
+                    // Apply the actual code edit shortly after highlighting
+                    setTimeout(() => {
+                        if (start_line > end_line) {
+                            const insertRange = new monaco.Range(start_line, 1, start_line, 1);
+                            const edit = { range: insertRange, text: new_text + '\n', forceMoveMarkers: true };
+                            editor.executeEdits('completion', [edit]);
+                            editor.revealLineInCenter(start_line, monaco.editor.ScrollType.Smooth);
+                            editor.setPosition({ lineNumber: start_line, column: 1 });
+                        } else {
+                            const range = new monaco.Range(start_line, 1, end_line, model.getLineMaxColumn(end_line));
+                            const edit = { range: range, text: new_text, forceMoveMarkers: true };
+                            editor.executeEdits('completion', [edit]);
+                            editor.revealLineInCenter(start_line, monaco.editor.ScrollType.Smooth);
+                            editor.setPosition({ lineNumber: start_line, column: 1 });
+                        }
+                    }, 100);
+
+                    // Remove the highlight after a delay to create a "flash" effect
+                    setTimeout(() => {
+                        editor.deltaDecorations(decoration, []);
+                    }, 1000);
+                });
+
+
+                // Interactive bugfix handlers
+                socket.on('visual_fix_diff', (data) => {
+                    handleEndState('Ready');
+                    document.getElementById('bugfixStatus').style.display = 'none';
+                    diffData = data; 
+                    renderInlineDiffView();
+                });
+
+                // Auto bugfix handlers
+                socket.on('bugfix_status', (data) => {
+                    const statusDiv = document.getElementById('bugfixStatus');
+                    statusDiv.textContent = data.message;
+                    statusDiv.className = `bugfix-status ${data.stage || ''}`;
+                    statusDiv.style.display = 'block';
+                });
+                
+                socket.on('start_visual_fix', (data) => {
+                    if (!editor) return;
+                    clearAllHighlights(); 
+                    const newDecorations = [];
+                    for (let i = 1; i <= data.total_lines; i++) {
+                        newDecorations.push({
+                            range: new monaco.Range(i, 1, i, 1),
+                            options: { isWholeLine: true, className: 'base-highlight' }
+                        });
+                    }
+                    baseDecorations = editor.deltaDecorations([], newDecorations);
+                });
+                
+                socket.on('visual_fix_cursor', (data) => {
+                    if (!editor) return;
+                    cursorDecorations = editor.deltaDecorations(cursorDecorations, [{
+                        range: new monaco.Range(data.line, 1, data.line, 1),
+                        options: { isWholeLine: true, className: 'cursor-highlight' }
+                    }]);
+                    editor.revealLineInCenterIfOutsideViewport(data.line, monaco.editor.ScrollType.Smooth);
+                    const decorationIdToRemove = baseDecorations[data.line - 1];
+                    if (decorationIdToRemove) editor.deltaDecorations([decorationIdToRemove], []);
+                });
+                
+                socket.on('update_line', (data) => {
+                    if (!editor) return;
+                    const model = editor.getModel();
+                    const range = new monaco.Range(data.line_num, 1, data.line_num, model.getLineMaxColumn(data.line_num));
+                    editor.executeEdits('auto-fix-update', [{ range: range, text: data.new_content }]);
+                });
+                
+                socket.on('final_code_sync', (data) => {
+                    if (!editor) return;
+                    clearAllHighlights();
+                    handleEndState('Ready');
+                    editor.setValue(data.code);
+                    showToast('Code was fixed automatically!', 'success');
+                });
+                
+            } catch (error) {
+                updateStatus('Connection Failed', true);
+            }
+        }
+
+        // --- Monaco Editor Setup ---
+        require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.33.0/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+            try {
+                monaco.editor.defineTheme('my-dark-theme', { 
+                    base: 'vs-dark', 
+                    inherit: true, 
+                    rules: [], 
+                    colors: { 'editor.background': '#1e1e1e' }
+                });
+                
+                editor = monaco.editor.create(document.getElementById('editor'), {
+                    value: 'def get_user_name():\n    pass\n\ndef validate_name(name):\n    pass\n\ndef generate_greeting(name):\n    greeting = f"Hello, {name}!"\n    return greeting\n\ndef main():\n    name = get_user_name()\n    if not validate_name(name):\n        print("Invalid name. Please enter a valid name.")\n        return\n\n    greeting = generate_greeting(name)\n    print(greeting)\n\n\nif __name__ == "__main__":\n    main()\n',
+                    language: 'python', 
+                    theme: 'my-dark-theme', 
+                    automaticLayout: true, 
+                    minimap: { enabled: true }, 
+                    fontSize: 14, 
+                    scrollBeyondLastLine: false
+                });
+                
+                initializeSocket();
+                
+            } catch (error) {
+                // Silent fail
+            }
+        });
+
+        // --- UI Event Listeners ---
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => switchMode(e.target.dataset.mode));
+            });
+            
+            document.querySelector('.send-btn').addEventListener('click', sendPrompt);
+            
+            document.querySelector('.input-area').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    sendPrompt();
+                }
+            });
+            
+            document.getElementById('apply-all-btn').addEventListener('click', () => setAllFixStatus('accepted'));
+            document.getElementById('reject-all-btn').addEventListener('click', () => setAllFixStatus('rejected'));
+            document.getElementById('cancel-fix-btn').addEventListener('click', exitDiffView);
+            document.getElementById('apply-changes-btn').addEventListener('click', applySelectedChanges);
+        });
+
+        // --- Core Functions ---
+        function sendPrompt() {
+            const inputArea = document.querySelector('.input-area');
+            const prompt = inputArea.value.trim();
+            
+            if (!prompt && currentMode !== 'bugfix' && currentMode !== 'complete') {
+                showToast('Please enter a prompt', 'error');
+                return;
+            }
+            if (isStreaming) return;
+            if (!socket || !socket.connected) {
+                showToast('Not connected to server. Please refresh the page.', 'error');
+                return;
+            }
+            
+            const currentCode = editor ? editor.getValue() : '';
+            if (currentMode !== 'generate' && !currentCode.trim()) {
+                showToast('No code in the editor to work on.', 'error'); 
+                return;
+            }
+            
+            exitDiffView();
+            const bugfixType = document.getElementById('autoFixToggle').checked ? 'auto' : 'interactive';
+            if (currentMode === 'bugfix' && bugfixType === 'auto') clearAllHighlights();
+            if (currentMode === 'generate') clearEditor();
+            
+            handleStartState(
+                currentMode === 'bugfix' ? 'Analyzing...' :
+                currentMode === 'complete' ? 'Completing code...' : 'Generating...'
+            );
+            
+            const payload = { 
+                content: prompt, 
+                mode: currentMode, 
+                currentCode: currentCode, 
+                bugfixType: bugfixType 
+            };
+            
+            try {
+                socket.emit('prompt', payload);
+                document.querySelector('.send-btn').disabled = true;
+                setTimeout(() => {
+                    if (!isStreaming) document.querySelector('.send-btn').disabled = false;
+                }, 1000);
+            } catch (error) {
+                showToast('Failed to send request', 'error');
+                handleEndState('Error', true);
+            }
+        }
+        
+        function handleStartState(statusText) {
+            isStreaming = true;
+            updateStatus(statusText);
+            document.querySelector('.send-btn').disabled = true;
+            if(currentMode === 'bugfix' || currentMode === 'complete') {
+                originalCodeForDiff = editor ? editor.getValue() : '';
+                const statusDiv = document.getElementById('bugfixStatus');
+                statusDiv.textContent = statusText;
+                statusDiv.className = 'bugfix-status analyzing'; // Use a generic class
+                statusDiv.style.display = 'block';
+            }
+        }
+
+        function handleEndState(statusText, isError = false) {
+            isStreaming = false;
+            updateStatus(statusText, isError);
+            document.querySelector('.send-btn').disabled = false;
+            const statusDiv = document.getElementById('bugfixStatus');
+            if (!isError) {
+                statusDiv.className = 'bugfix-status complete';
+                setTimeout(() => {
+                    if (statusDiv.style.display !== 'none') {
+                       statusDiv.style.display = 'none';
+                    }
+                }, 2000);
+            }
+        }
+        
+        function appendToEditor(text) {
+    if (!editor) return;
+    const model = editor.getModel();
+    const lastLine = model.getLineCount();
+    const lastCol = model.getLineMaxColumn(lastLine);
+
+    editor.executeEdits('stream', [{
+        range: new monaco.Range(lastLine, lastCol, lastLine, lastCol),
+        text: text,
+        forceMoveMarkers: true
+    }]);
+
+    // Set the cursor at the end without selecting the new text
+    const newLastLine = model.getLineCount();
+    const newLastCol = model.getLineMaxColumn(newLastLine);
+    editor.setPosition({ lineNumber: newLastLine, column: newLastCol });
+
+    // Scroll to the new position smoothly
+    editor.revealPosition({ lineNumber: newLastLine, column: newLastCol }, monaco.editor.ScrollType.Smooth);
+}
+
+
+        function clearEditor() {
+            if (editor) editor.setValue('');
+        }
+
+        // --- Interactive Diff View Logic ---
+        function renderInlineDiffView() {
+            const { changes } = diffData;
+            const originalLines = originalCodeForDiff.split('\n');
+            const diffView = document.getElementById('diff-view'), editorDiv = document.getElementById('editor'), controlsDiv = document.getElementById('diff-controls');
+            
+            controlsDiv.querySelectorAll('.control-btn').forEach(btn => btn.disabled = true);
+            editorDiv.style.display = 'none'; diffView.style.display = 'block'; controlsDiv.style.display = 'flex';
+            diffView.innerHTML = '';
+            
+            const lineElements = originalLines.map((lineContent, index) => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'diff-line line-analyzing';
+                lineDiv.textContent = lineContent || ' '; 
+                lineDiv.setAttribute('data-line-num', index + 1);
+                diffView.appendChild(lineDiv);
+                return lineDiv;
+            });
+
+            const fixMap = new Map(changes.map(fix => [fix.start_line, fix]));
+            
+            let lineIndex = 0;
+            const analysisInterval = setInterval(() => {
+                if (lineIndex >= lineElements.length) {
+                    clearInterval(analysisInterval);
+                    controlsDiv.querySelectorAll('.control-btn').forEach(btn => btn.disabled = false);
+                    return;
+                }
+
+                const currentLineNum = lineIndex + 1;
+                const currentLineEl = lineElements[lineIndex];
+
+                if (fixMap.has(currentLineNum)) {
+                    const fix = fixMap.get(currentLineNum);
+                    const fixIndex = changes.indexOf(fix);
+                    
+                    for (let i = fix.start_line - 1; i < fix.end_line; i++) {
+                        if(lineElements[i]) { 
+                            lineElements[i].className = 'diff-line line-buggy'; 
+                            lineElements[i].dataset.fixIndex = fixIndex; 
+                        }
+                    }
+                    
+                    const suggestionFragment = document.createDocumentFragment();
+                    const suggestionElements = fix.fixed_lines.map(lineContent => {
+                        const suggestionDiv = document.createElement('div');
+                        suggestionDiv.className = 'diff-line line-suggestion';
+                        suggestionDiv.textContent = lineContent || ' ';
+                        suggestionDiv.dataset.fixIndex = fixIndex;
+                        return suggestionDiv;
+                    });
+
+                    const lastSuggestion = suggestionElements[suggestionElements.length - 1];
+                    const actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'line-actions';
+                    actionsDiv.innerHTML = `<span class="action-btn accept" title="Accept Fix">✔</span><span class="action-btn reject" title="Reject Fix">✖</span>`;
+                    lastSuggestion.appendChild(actionsDiv);
+                    
+                    actionsDiv.querySelector('.accept').onclick = () => setFixStatus(fixIndex, 'accepted');
+                    actionsDiv.querySelector('.reject').onclick = () => setFixStatus(fixIndex, 'rejected');
+
+                    suggestionElements.forEach(el => suggestionFragment.appendChild(el));
+                    lineElements[fix.end_line - 1].after(suggestionFragment);
+
+                    lineIndex = fix.end_line - 1; 
+                } else {
+                    currentLineEl.classList.remove('line-analyzing');
+                }
+                
+                lineIndex++;
+            }, 100); 
+        }
+
+        function setFixStatus(fixIndex, status) { document.querySelectorAll(`[data-fix-index="${fixIndex}"]`).forEach(el => el.dataset.status = status); }
+        function setAllFixStatus(status) { diffData.changes.forEach((_, i) => setFixStatus(i, status)); }
+        
+        function applySelectedChanges() {
+            let finalCodeLines = []; 
+            const originalLines = originalCodeForDiff.split('\n'); 
+            let lastLineProcessed = -1;
+            const sortedChanges = [...diffData.changes].sort((a, b) => a.start_line - b.start_line);
+            
+            sortedChanges.forEach((fix) => {
+                const fixIndex = diffData.changes.indexOf(fix);
+                const status = document.querySelector(`.line-suggestion[data-fix-index="${fixIndex}"]`)?.dataset.status;
+                for (let j = lastLineProcessed + 1; j < fix.start_line - 1; j++) finalCodeLines.push(originalLines[j]);
+                finalCodeLines.push(...(status === 'accepted' ? fix.fixed_lines : originalLines.slice(fix.start_line - 1, fix.end_line)));
+                lastLineProcessed = fix.end_line - 1;
+            });
+            
+            for (let i = lastLineProcessed + 1; i < originalLines.length; i++) finalCodeLines.push(originalLines[i]);
+            editor.setValue(finalCodeLines.join('\n'));
+            showToast('Changes applied successfully!', 'success');
+            exitDiffView();
+        }
+        
+        function exitDiffView() {
+            document.getElementById('diff-view').style.display = 'none';
+            document.getElementById('diff-controls').style.display = 'none';
+            document.getElementById('editor').style.display = 'block';
+            diffData = []; 
+            originalCodeForDiff = '';
+        }
+
+        function updatecontext(){ document.getElementById('contextCount').textContent = interactionCount; }
+        
+        function switchMode(mode) {
+             document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+             document.querySelector(`.mode-btn[data-mode="${mode}"]`).classList.add('active');
+             currentMode = mode;
+             
+             document.getElementById('currentMode').textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+             document.getElementById('bugfixOptions').style.display = mode === 'bugfix' ? 'flex' : 'none';
+             
+             const inputArea = document.querySelector('.input-area');
+             switch(currentMode) {
+                 case 'bugfix':
+                     inputArea.placeholder = 'Describe the bug or paste error message or leave empty for full analysis...';
+                     break;
+                 case 'complete':
+                     inputArea.placeholder = 'Optionally describe what to complete...';
+                     break;
+                 default:
+                     inputArea.placeholder = 'Describe what you want...';
+             }
+        }
+        function updateStatus(text, isError = false) { document.getElementById('status').textContent = text; }
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.style.backgroundColor = type === 'error' ? '#d32f2f' : '#2c722f';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => document.body.contains(toast) && document.body.removeChild(toast), 4000);
+        }
+        function addToHistory(prompt, mode) {
+            const history = document.getElementById('history');
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            item.innerHTML = `<div class="history-mode">${mode}</div><div class="history-prompt" title="${prompt}">${prompt || 'Code analysis'}</div><div class="history-time">${new Date().toLocaleTimeString()}</div>`;
+            history.insertBefore(item, history.firstChild);
+            if (history.children.length > 20) history.removeChild(history.lastChild);
+        }
+        function clearAllHighlights() {
+            if (editor) {
+                baseDecorations = editor.deltaDecorations(baseDecorations, []);
+                cursorDecorations = editor.deltaDecorations(cursorDecorations, []);
+            }
+        }
+    </script>
+</body>
+</html>
