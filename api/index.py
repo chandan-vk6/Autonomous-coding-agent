@@ -19,7 +19,7 @@ from langchain_core.pydantic_v1 import BaseModel, Field
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5000"], ping_timeout=120, ping_interval=60)
+socketio = SocketIO(app, cors_allowed_origins=["*"], ping_timeout=120, ping_interval=60)
 
 # --- Groq API Configuration ---
 GROQ_API_KEY = os.getenv(
